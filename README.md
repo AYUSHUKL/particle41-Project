@@ -239,6 +239,3 @@ After destroy, manually delete:
 S3 backend bucket
 
 DynamoDB lock table
-
-
-## testing git coommand ##
