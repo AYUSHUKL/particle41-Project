@@ -74,6 +74,7 @@ Commands:
     cd app
     docker build -t simpletimeservice:v1 .
 
+
 4️⃣ Push Docker Image to Registry (Docker Hub)
 
 The image is pushed to Docker Hub, which acts as a central registry. 
