@@ -212,18 +212,18 @@ Terraform Apply
 
 No manual deployment steps are required.
 
-✅ Verification
+> Verification
 
-After deployment, Terraform outputs the ALB DNS name.
+After deployment completes, Terraform outputs the ALB DNS name.
 
-curl http://<alb_dns>/
+Test the service
+    http://simple-time-service-alb-1801556568.ap-south-1.elb.amazonaws.com
 
 
 Expected response:
-
 {
-  "timestamp": "...",
-  "ip": "..."
+  "timestamp": "2025-12-13T10:29:04.309550+00:00",
+  "ip": "106.215.176.112"
 }
 
 ## Cleanup (IMPORTANT)
