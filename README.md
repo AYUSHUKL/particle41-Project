@@ -2,53 +2,66 @@
 Pre-Assement for Particle41
 
 ## Prerequisites
-
 Before starting, ensure the following tools are installed:
 
-- Git: https://git-scm.com/downloads
-- Docker: https://docs.docker.com/get-docker/
-- Terraform: https://developer.hashicorp.com/terraform/downloads
-- AWS CLI: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
-- An active AWS account
+Git – https://git-scm.com/downloads
 
-AWS resources will incur cost. Please clean up after testing.
+Docker – https://docs.docker.com/get-docker/
 
-## AWS Credentials Configuration
+Terraform – https://developer.hashicorp.com/terraform/downloads
+
+AWS CLI – https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+
+An active AWS account
+
+> AWS resources will incur cost. Please clean up after testing.
+
+> AWS Credentials Configuration
 
 Terraform and CI/CD require AWS credentials.
 
-To configure locally:
+Configure locally
 aws configure
 
-For CI/CD, AWS credentials are stored securely as GitHub Actions secrets:
-- AWS_ACCESS_KEY_ID
-- AWS_SECRET_ACCESS_KEY
-- AWS_REGION
+For CI/CD (GitHub Actions)
 
-No credentials are committed to this repository.
+Store credentials as GitHub Actions secrets:
 
+AWS_ACCESS_KEY_ID
+
+AWS_SECRET_ACCESS_KEY
+
+AWS_REGION
+
+DOCKERHUB_USERNAME
+
+DOCKERHUB_TOKEN
+
+> No credentials are committed to this repository.
 
 ##### Task 1 - Minimalist Application Development / Docker / Kubernetes ####
 
 1️⃣ Application Code (app.py)
 
-The project starts with a simple Python web application.
+A simple Python web application using FastAPI.
 
-Uses FastAPI
+Characteristics:
 
 Stateless
 
 Listens on port 8080
 
-Returns current timestamp and client IP
+Returns:
 
+Current timestamp
+
+Client IP address
 
 2️⃣ Dockerfile (Containerization)
 
-The application is packaged into a container using a Dockerfile.
+The application is packaged into a Docker container.
 
-
-Important Docker practices used
+Best practices used:
 
 Runs as a non-root user
 
@@ -56,148 +69,173 @@ Uses a lightweight base image
 
 Exposes only the required port
 
+3️⃣ Build Docker Image
+cd app
+docker build -t simpletimeservice:v1 .
+
+4️⃣ Push Docker Image to Docker Hub
+
+Make sure you have a Docker Hub account.
+
+docker push ayushukl/simpletimeservice:v1
 
 
-3️⃣ Docker Image Creation
+Why this is required:
 
-After building, the application becomes a Docker image.
+ECS needs a registry to pull images
 
->What the image contains
-
-Application code
-
-Python runtime
-
-Required dependencies
-
-Commands:
-    cd app
-    docker build -t simpletimeservice:v1 .
-
-
-4️⃣ Push Docker Image to Registry (Docker Hub)
-
-The image is pushed to Docker Hub, which acts as a central registry. 
-## make sure you have account in docker hub
-
-Commands
-        docker push ayushukl/simpletimeservice:v1
-
->Why this step is required
-
-ECS needs a registry to pull images from
-
-CI/CD pipelines must access the image
+CI/CD pipelines require image access
 
 Decouples build from deployment
 
->To Run docker image in your system
-    command:
-    docker run -p 8080:8080 ayushukl/simpletimeservice:v1
+5️⃣ Run Docker Image Locally (Optional)
+docker run -p 8080:8080 ayushukl/simpletimeservice:v1
 
 ##### Task 2 - Terraform and Cloud: create the infrastructure to host your container. #####
 
 1️⃣ Terraform Backend & State Locking (Before Infrastructure Creation)
 
-    Before creating any AWS resources, we first prepare Terraform’s remote backend.
+Terraform state must not be stored locally for CI/CD workflows.
 
-    This is a critical step and must be completed before running Terraform.
+Problems with local state:
 
-    🔐 Terraform State Problem (Without Remote Backend)
+CI/CD pipelines cannot work reliably
 
-        If Terraform state is stored locally:
+Multiple users/jobs can overwrite state
 
-        CI/CD pipelines cannot work reliably
+No locking mechanism
 
-        Multiple users or jobs can overwrite state
+State corruption risk
 
-        No locking mechanism exists
+To solve this, Terraform uses:
 
-        Infrastructure state can become corrupted
+S3 → Remote state storage
 
-        To solve this, Terraform state is stored remotely and locked during execution.
+DynamoDB → State locking
 
 2️⃣ Create S3 Bucket (Terraform State Storage)
+aws s3api create-bucket \
+  --bucket simple-time-service-tfstate-12345 \
+  --region ap-south-1 \
+  --create-bucket-configuration LocationConstraint=ap-south-1
 
-    Terraform stores its state file (terraform.tfstate) in an S3 bucket.
-Commands:
-        aws s3api create-bucket --bucket simple-time-service-tfstate-12345 --region ap-south-1 --create-bucket-configuration LocationConstraint=ap-south-1
+
+Why S3:
+
+Highly durable
+
+Shared storage
+
+Native Terraform support
 
 3️⃣ Enable S3 Versioning (State History & Recovery)
-    Versioning ensures that all previous versions of the Terraform state file are preserved.
+aws s3api put-bucket-versioning \
+  --bucket simple-time-service-tfstate-12345 \
+  --versioning-configuration Status=Enabled
 
-Commands:
-        aws s3api put-bucket-versioning --bucket simple-time-service-tfstate-12345 --versioning-configuration Status=Enabled
+
+Benefits:
+
+Protects against accidental deletion
+
+Allows rollback of broken deployments
+
+Maintains state history
 
 4️⃣ Create DynamoDB Table (Terraform State Locking)
+aws dynamodb create-table \
+  --table-name terraform-locks \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
 
-    DynamoDB is used to lock the Terraform state during execution.
 
-Commands:
-        aws dynamodb create-table --table-name terraform-locks --attribute-definitions AttributeName=LockID,AttributeType=S --key-schema AttributeName=LockID,KeyType=HASH --billing-mode PAY_PER_REQUEST
+How locking works:
+
+Terraform creates a lock before execution
+
+Other runs wait or fail
+
+Lock is released after completion
+
 5️⃣ Terraform Initialization
+cd terraform
+terraform init
 
-    After backend and locking setup, Terraform must be initialized.
-Commands:
-    cd terraform
-    terraform init
+
+What happens:
+
+Backend connection is established
+
+Providers are downloaded
+
+State locking is verified
 
 6️⃣ Terraform Infrastructure Creation
-
-Terraform provisions AWS resources in a defined order.
-
-    Terraform
-  ├── VPC
-  │   ├── Public Subnets (ALB)
-  │   └── Private Subnets (ECS)
-  ├── NAT Gateway
-  ├── Security Groups
-  ├── Application Load Balancer
-  ├── Target Group
-  ├── ECS Cluster
-  ├── Task Definition
-  └── ECS Service
-
-Commands:
-    terraform plan
-    terraform apply
-
-7️⃣ CI/CD Automation
-    On every push to the main branch:
-    GitHub Push
-         ↓
-    Build Docker Image
-         ↓
-    Push to Docker Hub
-         ↓
-    Terraform Init
-         ↓
-    Terraform Plan
-         ↓
-    Terraform Apply
-
-8️⃣ Verification
-
-After deployment completes, Terraform outputs the ALB DNS name.
-
-Test the service
-    http://simple-time-service-alb-1801556568.ap-south-1.elb.amazonaws.com
+terraform plan
+terraform apply
 
 
+Resources provisioned:
+
+VPC
+├── Public Subnets (ALB)
+├── Private Subnets (ECS)
+├── NAT Gateway
+├── Security Groups
+├── Application Load Balancer
+├── Target Group
+├── ECS Cluster
+├── Task Definition
+└── ECS Service
 
 
+Result:
+The application is public, but the containers remain private and secure.
 
-## Cleanup
+🔄 CI/CD Automation
+
+On every push to the main branch:
+
+GitHub Push
+   ↓
+Build Docker Image
+   ↓
+Push to Docker Hub
+   ↓
+Terraform Init
+   ↓
+Terraform Plan
+   ↓
+Terraform Apply
+
+
+No manual deployment steps are required.
+
+✅ Verification
+
+After deployment, Terraform outputs the ALB DNS name.
+
+curl http://<alb_dns>/
+
+
+Expected response:
+
+{
+  "timestamp": "...",
+  "ip": "..."
+}
+
+## Cleanup (IMPORTANT)
 
 To avoid AWS charges:
+
 cd terraform
 terraform destroy
 
-After destroy, delete:
-- S3 backend bucket
-- DynamoDB lock table
 
+After destroy, manually delete:
 
+S3 backend bucket
 
-## Flow Diagram:
-  ![alt text](image-1.png)
+DynamoDB lock table
