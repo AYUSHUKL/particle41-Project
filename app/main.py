@@ -26,5 +26,3 @@ async def root(request: Request):
             "ip": client_ip,
         }
     )
-
-#checking git commit
